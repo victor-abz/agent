@@ -30,6 +30,7 @@ class ImageBuilder(Base):
         no_cache: bool,
         no_push: bool,
         registry: dict,
+        platform: str,
     ) -> None:
         super().__init__()
 
@@ -37,6 +38,7 @@ class ImageBuilder(Base):
         self.image_repository = image_repository
         self.image_tag = image_tag
         self.registry = registry
+        self.platform = platform
 
         # Build context, params
         self.filename = filename
@@ -81,13 +83,15 @@ class ImageBuilder(Base):
 
     @job("Run Remote Builder")
     def run_remote_builder(self):
-        self._build_image()
-        if self.build_failed:
-            return self.data
+        try:
+            return self._build_and_push()
+        finally:
+            self._cleanup_context()
 
-        if not self.no_push:
+    def _build_and_push(self):
+        self._build_image()
+        if not self.build_failed and not self.no_push:
             self._push_docker_image()
-        self._cleanup_context()
         return self.data
 
     @step("Build Image")
@@ -106,7 +110,7 @@ class ImageBuilder(Base):
         return {"output": self.output["build"]}
 
     def _get_build_command(self) -> str:
-        command = "docker buildx build --platform linux/amd64"
+        command = f"docker buildx build --platform {self.platform}"
         command = f"{command} -t {self._get_image_name()}"
 
         if self.no_cache:
